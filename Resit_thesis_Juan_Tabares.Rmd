@@ -1,0 +1,834 @@
+---
+title: "Resit thesis"
+author: "Juan Diego Tabares Guzman"
+date: "2023-08-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Clear workspace
+
+```{r}
+rm(list = ls())
+```
+
+Prepare environment
+
+```{r}
+setwd("C:/Users/juant/OneDrive/Documentos/JD/Personal/Thesis/Drafts/Resit/Data")
+```
+
+Loading required packages
+
+```{r, warning=FALSE}
+library(readxl)
+library(ggplot2)
+library(gplots)
+library(vars)
+library(wpa)
+library(ggpubr)
+#remotes::install_github("angusmoore/varexternalinstrument", force = TRUE)
+library(varexternalinstrument)
+library(sos)
+library(simts)
+library(broom)
+
+library(devtools)
+#install_github("martinbaumgaertner/varexternal")
+library(varexternal)
+library(aTSA)
+library(stargazer)
+library(lpirfs)
+```
+
+Importing dataset for the estimation section 
+
+```{r}
+data <- read_excel("C:/Users/juant/OneDrive/Documentos/JD/Personal/Thesis/Drafts/Resit/Data/data_resit.xlsx")
+
+data$us_cpi_inf <- data$us_cpi/100
+
+data$real_oil_price <- data$refiner_acq_cost_comp/data$us_cpi_inf
+
+data_var <- data.frame(log(data$oil_prod), log(data$world_ind_prod), log(data$real_oil_price), log(data$oecd_oil_stock), log(data$ind_prod_eu), log(data$ea19_cpi))
+
+data_var <- data_var[-1:-18,]
+
+colnames(data_var) <- c("oil_prod", "world_ind_prod", "real_oil_price", "oecd_oil_stock", "ind_prod_ea", "cpi_ea")
+
+date = seq(from = as.Date("1975-07-01"), to = as.Date("2022-12-01"), by = 'month')
+
+data_var$date <- date
+
+
+data_var_t <- ts(data_var,start=c(1975,7),frequency=12)
+
+head(data_var_t)
+```
+Graphs in levels
+
+```{r}
+
+oil_prod_g <- ggplot(data_var, aes(x=date, y=oil_prod)) +
+  geom_line(color = "navy", size = 1) +
+  theme_bw() +
+  labs(x="Date", y="World oil prod. (MMBD)") +
+  theme(text=element_text(size=12,  family="serif"))
+
+world_ind_prod_g <- ggplot(data_var, aes(x=date, y=world_ind_prod)) +
+  geom_line(color = "navy", size = 1) +
+  theme_bw() +
+  labs(x="Date", y="World ind. prod. (index)") +
+  theme(text=element_text(size=12,  family="serif"))
+
+real_oil_price_g <- ggplot(data_var, aes(x=date, y=real_oil_price)) +
+  geom_line(color = "navy", size = 1) +
+  theme_bw() +
+  labs(x="Date", y="Real oil price (USD)") +
+  theme(text=element_text(size=12,  family="serif"))
+
+global_oil_stock_g <- ggplot(data_var, aes(x=date, y=oecd_oil_stock)) +
+  geom_line(color = "navy", size = 1) +
+  theme_bw() +
+  labs(x="Date", y="World oil stocks (MMB)") +
+  theme(text=element_text(size=12,  family="serif"))
+
+oil_market_g1 <- ggarrange(oil_prod_g, world_ind_prod_g, ncol = 1, nrow = 2)
+oil_market_g2 <- ggarrange(real_oil_price_g, global_oil_stock_g, ncol = 1, nrow = 2)
+
+oil_market_g1
+oil_market_g2
+
+ind_prod_ea_g <- ggplot(data_var, aes(x=date, y=ind_prod_ea)) +
+  geom_line(color = "navy", size = 1) +
+  theme_bw() +
+  labs(x="Date", y="EA Ind. prod. (index)") +
+  theme(text=element_text(size=12,  family="serif"))
+
+cpi_ea_g <- ggplot(data_var, aes(x=date, y=cpi_ea)) +
+  geom_line(color = "navy", size = 1) +
+  theme_bw() +
+  labs(x="Date", y="EA CPI (index)") +
+  theme(text=element_text(size=12,  family="serif"))
+
+macro_g <- ggarrange(ind_prod_ea_g, cpi_ea_g, ncol = 1, nrow = 2)
+macro_g
+
+data_var_surprises <- data.frame(data$oil_supply_surprise, data$Date)
+colnames(data_var_surprises) <- c("oil_supply_surprise", "date")
+data_var_surprises <- data_var_surprises[-1:-111,]
+
+surprise_g <- ggplot(data_var_surprises, aes(x=date, y=oil_supply_surprise)) +
+  geom_line(color = "navy", size = 1) +
+  theme_bw() +
+  labs(x="Date", y="Revision in oil price expectations") +
+  theme(text=element_text(size=12,  family="serif"))
+
+```
+
+Unit root test 
+
+```{r}
+
+## DF test oil production 
+
+arima_oil_prod <- arima(data_var$oil_prod, order = c(8,0,0))
+LjungBox(arima_oil_prod$residuals, lag=seq(1,25,1))
+
+DF_oil_prod = ur.df(data_var$oil_prod, type = c("trend"), lags = 7)
+summary(DF_oil_prod)
+
+DF_oil_prod_inter = ur.df(data_var$oil_prod, type = c("drift"), lags = 7)
+summary(DF_oil_prod_inter)
+
+DF_oil_prod_none = ur.df(data_var$oil_prod, type = c("none"), lags = 7)
+summary(DF_oil_prod_none)
+
+## DF test world ind. prod.
+
+arima_world_ind_prod <- arima(data_var$world_ind_prod, order = c(4,0,0))
+LjungBox(arima_world_ind_prod$residuals, lag=seq(1,25,1))
+
+DF_world_ind_prod = ur.df(data_var$world_ind_prod, type = c("trend"), lags = 3)
+summary(DF_world_ind_prod)
+
+DF_world_ind_prod_inter = ur.df(data_var$world_ind_prod, type = c("drift"), lags = 3)
+summary(DF_world_ind_prod_inter)
+
+DF_world_ind_prod_none = ur.df(data_var$world_ind_prod, type = c("none"), lags = 3)
+summary(DF_world_ind_prod_none)
+
+
+## DF test real oil price
+
+arima_real_oil_price <- arima(data_var$real_oil_price, order = c(3,0,0))
+LjungBox(arima_real_oil_price$residuals, lag=seq(1,25,1))
+
+DF_real_oil_price = ur.df(data_var$real_oil_price, type = c("trend"), lags = 2)
+summary(DF_real_oil_price)
+
+DF_real_oil_price_inter = ur.df(data_var$real_oil_price, type = c("drift"), lags = 2)
+summary(DF_real_oil_price_inter)
+
+PP_real_oil_price = ur.pp(data_var$real_oil_price, type = "Z-tau", model = "constant", use.lag = 2)
+summary(PP_real_oil_price)
+
+## DF test global oil stocks
+
+arima_oecd_oil_stock <- arima(data_var$oecd_oil_stock, order = c(13,0,0))
+LjungBox(arima_oecd_oil_stock$residuals, lag=seq(1,25,1))
+
+DF_oecd_oil_stock = ur.df(data_var$oecd_oil_stock, type = c("trend"), lags = 12)
+summary(DF_oecd_oil_stock)
+
+PP_oecd_oil_stock = ur.pp(data_var$oecd_oil_stock, type = "Z-tau", model = "trend", use.lag = 12)
+summary(PP_oecd_oil_stock)
+
+## DF test EA ind. prod.
+
+arima_ind_prod_ea <- arima(data_var$ind_prod_ea, order = c(3,0,0))
+LjungBox(arima_ind_prod_ea$residuals, lag=seq(1,25,1))
+
+DF_ind_prod_ea = ur.df(data_var$ind_prod_ea, type = c("trend"), lags = 2)
+summary(DF_ind_prod_ea)
+
+DF_ind_prod_ea_inter = ur.df(data_var$ind_prod_ea, type = c("drift"), lags = 2)
+summary(DF_ind_prod_ea_inter)
+
+DF_ind_prod_ea_none = ur.df(data_var$ind_prod_ea, type = c("none"), lags = 2)
+summary(DF_ind_prod_ea_none)
+
+## DF test EA CPI
+
+arima_cpi_ea <- arima(data_var$cpi_ea, order = c(15,0,0))
+LjungBox(arima_cpi_ea$residuals, lag=seq(1,25,1))
+
+DF_cpi_ea = ur.df(data_var$cpi_ea, type = c("trend"), lags = 14)
+summary(DF_cpi_ea)
+
+DF_cpi_ea_inter = ur.df(data_var$cpi_ea, type = c("drift"), lags = 14)
+summary(DF_cpi_ea_inter)
+
+DF_cpi_ea_none = ur.df(data_var$cpi_ea, type = c("none"), lags = 14)
+summary(DF_cpi_ea_none)
+
+PP_cpi_ea = ur.pp(data_var$cpi_ea, type = "Z-tau", model = "trend", use.lag = 14)
+summary(PP_cpi_ea)
+
+PP_cpi_ea_2 = PP.test(data_var$cpi_ea)
+PP_cpi_ea_2$p.value
+
+arima_cpi_ea_lv <- arima(data$ea19_cpi, order = c(20,0,0))
+LjungBox(arima_cpi_ea_lv$residuals, lag=seq(1,25,1))
+
+DF_cpi_ea_lv = ur.df(data$ea19_cpi, type = c("trend"), lags = 19)
+summary(DF_cpi_ea_lv)
+
+```
+
+
+First differences transformation on unit root tests
+
+```{r}
+oil_prod_diff <- diff(data_var$oil_prod, lag = 1)
+world_ind_pn_diff <- diff(data_var$world_ind_prod, lag = 1)
+ind_prod_ea_diff <- diff(data_var$ind_prod_ea, lag = 1)
+cpi_ea_diff <- diff(data_var$cpi_ea, lag =1)
+
+data_var_diff <- data_var[-1,]
+
+data_var_diff$oil_prod_diff <- oil_prod_diff
+data_var_diff$world_ind_prod_diff <- world_ind_pn_diff
+data_var_diff$ind_prod_ea_diff <- ind_prod_ea_diff
+data_var_diff$cpi_ea_diff <- cpi_ea_diff
+
+data_var_diff <- subset(data_var_diff, select = - c(oil_prod, world_ind_prod, ind_prod_ea, cpi_ea))  
+
+order = c("oil_prod_diff","world_ind_prod_diff","real_oil_price","oecd_oil_stock","ind_prod_ea_diff", "cpi_ea_diff", "date")
+data_var_diff <- data_var_diff[, order]
+```
+
+Graphs in log - diff 
+
+```{r}
+
+oil_prod_diff_g <- ggplot(data_var_diff, aes(x=date, y=oil_prod_diff)) +
+  geom_line(color = "navy", size = 1) +
+  theme_bw() +
+  labs(x="Date", y="World oil prod. (MMBD)") +
+  theme(text=element_text(size=12,  family="serif"))
+
+world_ind_prod_diff_g <- ggplot(data_var_diff, aes(x=date, y=world_ind_prod_diff)) +
+  geom_line(color = "navy", size = 1) +
+  theme_bw() +
+  labs(x="Date", y="World ind. prod. (index)") +
+  theme(text=element_text(size=12,  family="serif"))
+
+ind_prod_ea_diff_g <- ggplot(data_var_diff, aes(x=date, y=ind_prod_ea_diff)) +
+  geom_line(color = "navy", size = 1) +
+  theme_bw() +
+  labs(x="Date", y="EA Ind. prod. (index)") +
+  theme(text=element_text(size=12,  family="serif"))
+
+cpi_ea_diff_g <- ggplot(data_var_diff, aes(x=date, y=cpi_ea_diff)) +
+  geom_line(color = "navy", size = 1) +
+  theme_bw() +
+  labs(x="Date", y="EA CPI (index)") +
+  theme(text=element_text(size=12,  family="serif"))
+
+oil_market_diff_g <- ggarrange(oil_prod_diff_g, world_ind_prod_diff_g, ncol = 1, nrow = 2)
+macro_diff_g <- ggarrange(ind_prod_ea_diff_g, cpi_ea_diff_g, ncol = 1, nrow = 2)
+
+oil_market_diff_g
+macro_diff_g
+```
+
+
+
+Estimation in log-diff and log-levels on unit root tests. Period Period 1986:1 - 2022:12
+
+```{r}
+y <- cbind(data_var_diff$oil_prod_diff, data_var_diff$world_ind_prod_diff, data_var_diff$real_oil_price, data_var_diff$oecd_oil_stock, data_var_diff$ind_prod_ea_diff, data_var_diff$cpi_ea_diff)
+
+colnames(y) <- c("oil_prod", "world_ind_prod", "real_oil_price", "glob_oil_stock", "ind_prod_ea", "cpi_ea")
+
+## period 1986:1 - 2022:12
+
+y <- y[-1:-125,]
+
+oil_supply_surprise <- data.frame(data$oil_supply_surprise)
+
+oil_supply_surprise <- oil_supply_surprise[-1:-144,]
+
+z <- cbind(oil_supply_surprise)
+colnames(z) <- c("oil_supply_surprise")
+
+
+## VAR using IV method
+# Step 1
+
+reduced_form_VAR <- VAR(y, p = 12, type = "const")
+
+#Instantaneous response using instrument
+
+
+shockcol <- externalinstrument(reduced_form_VAR, z, "real_oil_price")
+shockcol
+
+
+## IRFs
+
+ma_representation <- Phi(reduced_form_VAR, 50)
+
+irfs <- apply(ma_representation, 3, function(x) x %*% shockcol)
+
+irfs <- as.data.frame(t(irfs))
+
+colnames(irfs) <- names(shockcol)
+
+irfs <- mutate(irfs, horizon = 0:50)
+
+irfs <- gather(irfs, key = variable, value = response, -horizon)
+
+
+irfs_oil_prod <- irfs[irfs$variable == 'oil_prod',]
+lower_irfs_oil_prod = irfs_oil_prod$response - sd(irfs_oil_prod$response) #Lower 95% limit
+upper_irfs_oil_prod = irfs_oil_prod$response + sd(irfs_oil_prod$response) #Upper 95% limit
+
+irfs_world_ind_prod <- irfs[irfs$variable == 'world_ind_prod',]
+lower_irfs_world_ind_prod = irfs_world_ind_prod$response - sd(irfs_world_ind_prod$response) #Lower 95% limit
+upper_irfs_world_ind_prod = irfs_world_ind_prod$response + sd(irfs_world_ind_prod$response) #Upper 95% limit
+
+irfs_real_oil_price <- irfs[irfs$variable == 'real_oil_price',]
+lower_irfs_real_oil_price = irfs_real_oil_price$response - sd(irfs_real_oil_price$response) #Lower 95% limit
+upper_irfs_real_oil_price = irfs_real_oil_price$response + sd(irfs_real_oil_price$response) #Upper 95% limit
+
+irfs_glob_oil_stock <- irfs[irfs$variable == 'glob_oil_stock',]
+lower_irfs_glob_oil_stock = irfs_glob_oil_stock$response - sd(irfs_glob_oil_stock$response) #Lower 95% limit
+upper_irfs_glob_oil_stock = irfs_glob_oil_stock$response + sd(irfs_glob_oil_stock$response) #Upper 95% limit
+
+irfs_ind_prod_ea <- irfs[irfs$variable == 'ind_prod_ea',]
+lower_irfs_ind_prod_ea = irfs_ind_prod_ea$response - sd(irfs_ind_prod_ea$response) #Lower 95% limit
+upper_irfs_ind_prod_ea = irfs_ind_prod_ea$response + sd(irfs_ind_prod_ea$response) #Upper 95% limit
+
+irfs_cpi_ea <- irfs[irfs$variable == 'cpi_ea',]
+lower_irfs_cpi_ea = irfs_cpi_ea$response - sd(irfs_cpi_ea$response) #Lower 95% limit
+upper_irfs_cpi_ea = irfs_cpi_ea$response + sd(irfs_cpi_ea$response) #Upper 95% limit
+
+
+irfs_oil_prod_g <- ggplot(irfs_oil_prod, aes(x = horizon, y = response)) +
+  geom_line(size = 1, col = "black") +
+  geom_line(aes(y = lower_irfs_oil_prod), color = "red", linetype = 5) +
+  geom_line(aes(y = upper_irfs_oil_prod), color = "red", linetype = 5) +
+  ggtitle("World oil production") +
+  theme_bw() +
+  labs(x="Horizon", y="Percent change (MMBD)") +
+  theme(text=element_text(size=10,  family="serif"))
+
+
+irfs_world_ind_prod_g <- ggplot(irfs_world_ind_prod, aes(x = horizon, y = response)) +
+  geom_line(size = 1, col = "black") +
+  geom_line(aes(y = lower_irfs_world_ind_prod), color = "red", linetype = 5) +
+  geom_line(aes(y = upper_irfs_world_ind_prod), color = "red", linetype = 5) +
+  ggtitle("World industrial production") +
+  theme_bw() +
+  labs(x="Horizon", y="Percent change (index)") +
+  theme(text=element_text(size=10,  family="serif"))
+
+irfs_real_oil_price_g <- ggplot(irfs_real_oil_price, aes(x = horizon, y = response)) +
+  geom_line(size = 1, col = "black") +
+  geom_line(aes(y = lower_irfs_real_oil_price), color = "red", linetype = 5) +
+  geom_line(aes(y = upper_irfs_real_oil_price), color = "red", linetype = 5) +
+  ggtitle("Real oil price") +
+  theme_bw() +
+  labs(x="Horizon", y="Percent (USD)") +
+  theme(text=element_text(size=10,  family="serif"))
+
+irfs_glob_oil_stock_g <- ggplot(irfs_glob_oil_stock, aes(x = horizon, y = response)) +
+  geom_line(size = 1, col = "black") +
+  geom_line(aes(y = lower_irfs_glob_oil_stock), color = "red", linetype = 5) +
+  geom_line(aes(y = upper_irfs_glob_oil_stock), color = "red", linetype = 5) +
+  ggtitle("World oil inventories") +
+  theme_bw() +
+  labs(x="Horizon", y="Percent (MMB)") +
+  theme(text=element_text(size=10,  family="serif"))
+
+irfs_ind_prod_ea_g <- ggplot(irfs_ind_prod_ea, aes(x = horizon, y = response)) +
+  geom_line(size = 1, col = "black") +
+  geom_line(aes(y = lower_irfs_ind_prod_ea), color = "red", linetype = 5) +
+  geom_line(aes(y = upper_irfs_ind_prod_ea), color = "red", linetype = 5) +
+  ggtitle("EA industrial production") +
+  theme_bw() +
+  labs(x="Horizon", y="Percent change (index)") +
+  theme(text=element_text(size=10,  family="serif"))
+
+irfs_cpi_ea_g <- ggplot(irfs_cpi_ea, aes(x = horizon, y = response)) +
+  geom_line(size = 1, col = "black") +
+  geom_line(aes(y = lower_irfs_cpi_ea), color = "red", linetype = 5) +
+  geom_line(aes(y = upper_irfs_cpi_ea), color = "red", linetype = 5) +
+  ggtitle("EA CPI") +
+  theme_bw() +
+  labs(x="Horizon", y="Percent change (index)") +
+  theme(text=element_text(size=10,  family="serif"))
+
+
+## Cum sum for IRFs in log diff
+
+# oil prod
+
+irfs_cumsum_oil_prod <- cumsum(irfs_oil_prod$response)
+irfs_cumsum_oil_prod <- data.frame(irfs_cumsum_oil_prod)
+irfs_cumsum_oil_prod$horizon <- irfs_oil_prod$horizon
+colnames(irfs_cumsum_oil_prod) <- c("response", "horizon")
+
+lower_irfs_cumsum_oil_prod = irfs_cumsum_oil_prod$response - sd(irfs_cumsum_oil_prod$response) #Lower 95% limit
+upper_irfs_cumsum_oil_prod = irfs_cumsum_oil_prod$response + sd(irfs_cumsum_oil_prod$response) #Upper 95% limit
+
+irfs_cum_oil_prod_g <- ggplot(irfs_cumsum_oil_prod, aes(x = horizon, y = response)) +
+  geom_line(size = 1, col = "black") +
+  geom_line(aes(y = lower_irfs_cumsum_oil_prod), color = "red", linetype = 5) +
+  geom_line(aes(y = upper_irfs_cumsum_oil_prod), color = "red", linetype = 5) +
+  ggtitle("World oil production") +
+  theme_bw() +
+  labs(x="Horizon", y="Cum. percent change (MMBD)") +
+  theme(text=element_text(size=10,  family="serif"))
+
+# World ind prod
+
+irfs_cumsum_world_ind_prod <- cumsum(irfs_world_ind_prod$response)
+irfs_cumsum_world_ind_prod <- data.frame(irfs_cumsum_world_ind_prod)
+irfs_cumsum_world_ind_prod$horizon <- irfs_world_ind_prod$horizon
+colnames(irfs_cumsum_world_ind_prod) <- c("response", "horizon")
+
+lower_irfs_cumsum_world_ind_prod = irfs_cumsum_world_ind_prod$response - sd(irfs_cumsum_world_ind_prod$response) #Lower 95% limit
+upper_irfs_cumsum_world_ind_prod = irfs_cumsum_world_ind_prod$response + sd(irfs_cumsum_world_ind_prod$response) #Upper 95% limit
+
+irfs_cum_world_ind_prod_g <- ggplot(irfs_cumsum_world_ind_prod, aes(x = horizon, y = response)) +
+  geom_line(size = 1, col = "black") +
+  geom_line(aes(y = lower_irfs_cumsum_world_ind_prod), color = "red", linetype = 5) +
+  geom_line(aes(y = upper_irfs_cumsum_world_ind_prod), color = "red", linetype = 5) +
+  ggtitle("World industrial production") +
+  theme_bw() +
+  labs(x="Horizon", y="Cum. percent change (index)") +
+  theme(text=element_text(size=10,  family="serif"))
+
+# EA ind prod
+
+irfs_cumsum_ind_prod_ea <- cumsum(irfs_ind_prod_ea$response)
+irfs_cumsum_ind_prod_ea <- data.frame(irfs_cumsum_ind_prod_ea)
+irfs_cumsum_ind_prod_ea$horizon <- irfs_ind_prod_ea$horizon
+colnames(irfs_cumsum_ind_prod_ea) <- c("response", "horizon")
+
+lower_irfs_cumsum_ind_prod_ea = irfs_cumsum_ind_prod_ea$response - sd(irfs_cumsum_ind_prod_ea$response) #Lower 95% limit
+upper_irfs_cumsum_ind_prod_ea = irfs_cumsum_ind_prod_ea$response + sd(irfs_cumsum_ind_prod_ea$response) #Upper 95% limit
+
+irfs_cum_ind_prod_ea_g <- ggplot(irfs_cumsum_ind_prod_ea, aes(x = horizon, y = response)) +
+  geom_line(size = 1, col = "black") +
+  geom_line(aes(y = lower_irfs_cumsum_ind_prod_ea), color = "red", linetype = 5) +
+  geom_line(aes(y = upper_irfs_cumsum_ind_prod_ea), color = "red", linetype = 5) +
+  ggtitle("EA industrial production") +
+  theme_bw() +
+  labs(x="Horizon", y="Cum. percent change (index)") +
+  theme(text=element_text(size=10,  family="serif"))
+
+# EA cpi
+
+irfs_cumsum_cpi_ea <- cumsum(irfs_cpi_ea$response)
+irfs_cumsum_cpi_ea <- data.frame(irfs_cumsum_cpi_ea)
+irfs_cumsum_cpi_ea$horizon <- irfs_cpi_ea$horizon
+colnames(irfs_cumsum_cpi_ea) <- c("response", "horizon")
+
+lower_irfs_cumsum_cpi_ea = irfs_cumsum_cpi_ea$response - sd(irfs_cumsum_cpi_ea$response) #Lower 95% limit
+upper_irfs_cumsum_cpi_ea = irfs_cumsum_cpi_ea$response + sd(irfs_cumsum_cpi_ea$response) #Upper 95% limit
+
+irfs_cum_cpi_ea_g <- ggplot(irfs_cumsum_cpi_ea, aes(x = horizon, y = response)) +
+  geom_line(size = 1, col = "black") +
+  geom_line(aes(y = lower_irfs_cumsum_cpi_ea), color = "red", linetype = 5) +
+  geom_line(aes(y = upper_irfs_cumsum_cpi_ea), color = "red", linetype = 5) +
+  ggtitle("EA CPI") +
+  theme_bw() +
+  labs(x="Horizon", y="Cum. percent change (index)") +
+  theme(text=element_text(size=10,  family="serif"))
+
+```
+IC for lag length 
+
+```{r}
+
+#Lag selection 
+
+lagSelect = VARselect(y, lag.max = 24, type = "const")
+stargazer(lagSelect$criteria, type = "latex")
+
+```
+
+
+Graphs for results chapter in document
+
+```{r}
+
+# Cum percent change (log - diff) variables: oil prod, world ind prod, EA ind prod, EA cpi
+
+irfs_cum_oil_prod_g
+irfs_cum_world_ind_prod_g
+irfs_cum_ind_prod_ea_g
+irfs_cum_cpi_ea_g
+
+# Percent (log - level) variables: real oil price, global oil stocks
+
+irfs_real_oil_price_g
+irfs_glob_oil_stock_g
+
+
+# Results
+
+results_1_g <- ggarrange(irfs_cum_oil_prod_g, irfs_cum_world_ind_prod_g, ncol = 1, nrow = 2)
+results_2_g <- ggarrange(irfs_real_oil_price_g, irfs_glob_oil_stock_g, ncol = 1, nrow = 2)
+results_3_g <- ggarrange(irfs_cum_ind_prod_ea_g, irfs_cum_cpi_ea_g, ncol = 1, nrow = 2)
+
+```
+
+Robustness check
+
+```{r} 
+
+## Estimation using 24 lags 
+
+## VAR using IV method
+# Step 1
+
+reduced_form_VAR_24 <- VAR(y, p = 24, type = "const")
+
+#Instantaneous response using instrument
+
+
+shockcol_24 <- externalinstrument(reduced_form_VAR_24, z, "real_oil_price")
+shockcol_24
+
+
+## IRFs
+
+ma_representation_24 <- Phi(reduced_form_VAR_24, 50)
+
+irfs_24 <- apply(ma_representation_24, 3, function(x) x %*% shockcol_24)
+
+irfs_24 <- as.data.frame(t(irfs_24))
+
+colnames(irfs_24) <- names(shockcol_24)
+
+irfs_24 <- mutate(irfs_24, horizon = 0:50)
+
+irfs_24 <- gather(irfs_24, key = variable, value = response, -horizon)
+
+
+irfs_oil_prod_24 <- irfs_24[irfs_24$variable == 'oil_prod',]
+lower_irfs_oil_prod_24 = irfs_oil_prod_24$response - sd(irfs_oil_prod_24$response) #Lower 95% limit
+upper_irfs_oil_prod_24 = irfs_oil_prod_24$response + sd(irfs_oil_prod_24$response) #Upper 95% limit
+
+irfs_world_ind_prod_24 <- irfs_24[irfs_24$variable == 'world_ind_prod',]
+lower_irfs_world_ind_prod_24 = irfs_world_ind_prod_24$response - sd(irfs_world_ind_prod_24$response) #Lower 95% limit
+upper_irfs_world_ind_prod_24 = irfs_world_ind_prod_24$response + sd(irfs_world_ind_prod_24$response) #Upper 95% limit
+
+irfs_real_oil_price_24 <- irfs_24[irfs_24$variable == 'real_oil_price',]
+lower_irfs_real_oil_price_24 = irfs_real_oil_price_24$response - sd(irfs_real_oil_price_24$response) #Lower 95% limit
+upper_irfs_real_oil_price_24 = irfs_real_oil_price_24$response + sd(irfs_real_oil_price_24$response) #Upper 95% limit
+
+irfs_glob_oil_stock_24 <- irfs_24[irfs_24$variable == 'glob_oil_stock',]
+lower_irfs_glob_oil_stock_24 = irfs_glob_oil_stock_24$response - sd(irfs_glob_oil_stock_24$response) #Lower 95% limit
+upper_irfs_glob_oil_stock_24 = irfs_glob_oil_stock_24$response + sd(irfs_glob_oil_stock_24$response) #Upper 95% limit
+
+irfs_ind_prod_ea_24 <- irfs_24[irfs_24$variable == 'ind_prod_ea',]
+lower_irfs_ind_prod_ea_24 = irfs_ind_prod_ea_24$response - sd(irfs_ind_prod_ea_24$response) #Lower 95% limit
+upper_irfs_ind_prod_ea_24 = irfs_ind_prod_ea_24$response + sd(irfs_ind_prod_ea_24$response) #Upper 95% limit
+
+irfs_cpi_ea_24 <- irfs_24[irfs_24$variable == 'cpi_ea',]
+lower_irfs_cpi_ea_24 = irfs_cpi_ea_24$response - sd(irfs_cpi_ea_24$response) #Lower 95% limit
+upper_irfs_cpi_ea_24 = irfs_cpi_ea_24$response + sd(irfs_cpi_ea_24$response) #Upper 95% limit
+
+## Graphs
+
+irfs_real_oil_price_g_24 <- ggplot(irfs_real_oil_price_24, aes(x = horizon, y = response)) +
+  geom_line(size = 1, col = "black") +
+  geom_line(aes(y = lower_irfs_real_oil_price_24), color = "red", linetype = 5) +
+  geom_line(aes(y = upper_irfs_real_oil_price_24), color = "red", linetype = 5) +
+  ggtitle("Real oil price") +
+  theme_bw() +
+  labs(x="Horizon", y="Percent (USD)") +
+  theme(text=element_text(size=10,  family="serif"))
+
+irfs_glob_oil_stock_g_24 <- ggplot(irfs_glob_oil_stock_24, aes(x = horizon, y = response)) +
+  geom_line(size = 1, col = "black") +
+  geom_line(aes(y = lower_irfs_glob_oil_stock_24), color = "red", linetype = 5) +
+  geom_line(aes(y = upper_irfs_glob_oil_stock_24), color = "red", linetype = 5) +
+  ggtitle("World oil inventories") +
+  theme_bw() +
+  labs(x="Horizon", y="Percent (MMB)") +
+  theme(text=element_text(size=10,  family="serif"))
+
+## Cum sum for IRFs in log diff
+
+# oil prod
+
+irfs_cumsum_oil_prod_24 <- cumsum(irfs_oil_prod_24$response)
+irfs_cumsum_oil_prod_24 <- data.frame(irfs_cumsum_oil_prod_24)
+irfs_cumsum_oil_prod_24$horizon <- irfs_oil_prod_24$horizon
+colnames(irfs_cumsum_oil_prod_24) <- c("response", "horizon")
+
+lower_irfs_cumsum_oil_prod_24 = irfs_cumsum_oil_prod_24$response - sd(irfs_cumsum_oil_prod_24$response) #Lower 95% limit
+upper_irfs_cumsum_oil_prod_24 = irfs_cumsum_oil_prod_24$response + sd(irfs_cumsum_oil_prod_24$response) #Upper 95% limit
+
+irfs_cum_oil_prod_g_24 <- ggplot(irfs_cumsum_oil_prod_24, aes(x = horizon, y = response)) +
+  geom_line(size = 1, col = "black") +
+  geom_line(aes(y = lower_irfs_cumsum_oil_prod_24), color = "red", linetype = 5) +
+  geom_line(aes(y = upper_irfs_cumsum_oil_prod_24), color = "red", linetype = 5) +
+  ggtitle("World oil production") +
+  theme_bw() +
+  labs(x="Horizon", y="Cum. percent change (MMBD)") +
+  theme(text=element_text(size=10,  family="serif"))
+
+# World ind prod
+
+irfs_cumsum_world_ind_prod_24 <- cumsum(irfs_world_ind_prod_24$response)
+irfs_cumsum_world_ind_prod_24 <- data.frame(irfs_cumsum_world_ind_prod_24)
+irfs_cumsum_world_ind_prod_24$horizon <- irfs_world_ind_prod_24$horizon
+colnames(irfs_cumsum_world_ind_prod_24) <- c("response", "horizon")
+
+lower_irfs_cumsum_world_ind_prod_24 = irfs_cumsum_world_ind_prod_24$response - sd(irfs_cumsum_world_ind_prod_24$response) #Lower 95% limit
+upper_irfs_cumsum_world_ind_prod_24 = irfs_cumsum_world_ind_prod_24$response + sd(irfs_cumsum_world_ind_prod_24$response) #Upper 95% limit
+
+irfs_cum_world_ind_prod_g_24 <- ggplot(irfs_cumsum_world_ind_prod_24, aes(x = horizon, y = response)) +
+  geom_line(size = 1, col = "black") +
+  geom_line(aes(y = lower_irfs_cumsum_world_ind_prod_24), color = "red", linetype = 5) +
+  geom_line(aes(y = upper_irfs_cumsum_world_ind_prod_24), color = "red", linetype = 5) +
+  ggtitle("World industrial production") +
+  theme_bw() +
+  labs(x="Horizon", y="Cum. percent change (index)") +
+  theme(text=element_text(size=10,  family="serif"))
+
+# EA ind prod
+
+irfs_cumsum_ind_prod_ea_24 <- cumsum(irfs_ind_prod_ea_24$response)
+irfs_cumsum_ind_prod_ea_24 <- data.frame(irfs_cumsum_ind_prod_ea_24)
+irfs_cumsum_ind_prod_ea_24$horizon <- irfs_ind_prod_ea_24$horizon
+colnames(irfs_cumsum_ind_prod_ea_24) <- c("response", "horizon")
+
+lower_irfs_cumsum_ind_prod_ea_24 = irfs_cumsum_ind_prod_ea_24$response - sd(irfs_cumsum_ind_prod_ea_24$response) #Lower 95% limit
+upper_irfs_cumsum_ind_prod_ea_24 = irfs_cumsum_ind_prod_ea_24$response + sd(irfs_cumsum_ind_prod_ea_24$response) #Upper 95% limit
+
+irfs_cum_ind_prod_ea_g_24 <- ggplot(irfs_cumsum_ind_prod_ea_24, aes(x = horizon, y = response)) +
+  geom_line(size = 1, col = "black") +
+  geom_line(aes(y = lower_irfs_cumsum_ind_prod_ea_24), color = "red", linetype = 5) +
+  geom_line(aes(y = upper_irfs_cumsum_ind_prod_ea_24), color = "red", linetype = 5) +
+  ggtitle("EA industrial production") +
+  theme_bw() +
+  labs(x="Horizon", y="Cum. percent change (index)") +
+  theme(text=element_text(size=10,  family="serif"))
+
+# EA cpi
+
+irfs_cumsum_cpi_ea_24 <- cumsum(irfs_cpi_ea_24$response)
+irfs_cumsum_cpi_ea_24 <- data.frame(irfs_cumsum_cpi_ea_24)
+irfs_cumsum_cpi_ea_24$horizon <- irfs_cpi_ea_24$horizon
+colnames(irfs_cumsum_cpi_ea_24) <- c("response", "horizon")
+
+lower_irfs_cumsum_cpi_ea_24 = irfs_cumsum_cpi_ea_24$response - sd(irfs_cumsum_cpi_ea_24$response) #Lower 95% limit
+upper_irfs_cumsum_cpi_ea_24 = irfs_cumsum_cpi_ea_24$response + sd(irfs_cumsum_cpi_ea_24$response) #Upper 95% limit
+
+irfs_cum_cpi_ea_g_24 <- ggplot(irfs_cumsum_cpi_ea_24, aes(x = horizon, y = response)) +
+  geom_line(size = 1, col = "black") +
+  geom_line(aes(y = lower_irfs_cumsum_cpi_ea_24), color = "red", linetype = 5) +
+  geom_line(aes(y = upper_irfs_cumsum_cpi_ea_24), color = "red", linetype = 5) +
+  ggtitle("EA CPI") +
+  theme_bw() +
+  labs(x="Horizon", y="Cum. percent change (index)") +
+  theme(text=element_text(size=10,  family="serif"))
+
+# Graphs for document
+
+results_1_g_24 <- ggarrange(irfs_cum_oil_prod_g_24, irfs_cum_world_ind_prod_g_24, ncol = 1, nrow = 2)
+results_2_g_24 <- ggarrange(irfs_real_oil_price_g_24, irfs_glob_oil_stock_g_24, ncol = 1, nrow = 2)
+results_3_g_24 <- ggarrange(irfs_cum_ind_prod_ea_g_24, irfs_cum_cpi_ea_g_24, ncol = 1, nrow = 2)
+
+
+```
+
+
+```{r} 
+
+## Estimation using log levels 
+
+y_l <- cbind(data_var$oil_prod, data_var$world_ind_prod, data_var$real_oil_price, data_var$oecd_oil_stock, data_var$ind_prod_ea, data_var$cpi_ea)
+
+colnames(y_l) <- c("oil_prod", "world_ind_prod", "real_oil_price", "glob_oil_stock", "ind_prod_ea", "cpi_ea")
+
+## period 1986:1 - 2022:12
+
+y_l <- y_l[-1:-126,]
+
+oil_supply_surprise_l <- data.frame(data$oil_supply_surprise)
+
+oil_supply_surprise_l <- oil_supply_surprise_l[-1:-144,]
+
+z_l <- cbind(oil_supply_surprise_l)
+colnames(z_l) <- c("oil_supply_surprise")
+
+
+## VAR using IV method
+# Step 1
+
+reduced_form_VAR_l <- VAR(y_l, p = 12, type = "const")
+
+#Instantaneous response using instrument
+
+
+shockcol_l <- externalinstrument(reduced_form_VAR_l, z_l, "real_oil_price")
+shockcol_l
+
+
+## IRFs
+
+ma_representation_l <- Phi(reduced_form_VAR_l, 50)
+
+irfs_l <- apply(ma_representation_l, 3, function(x) x %*% shockcol_l)
+
+irfs_l <- as.data.frame(t(irfs_l))
+
+colnames(irfs_l) <- names(shockcol_l)
+
+irfs_l <- mutate(irfs_l, horizon = 0:50)
+
+irfs_l <- gather(irfs_l, key = variable, value = response, -horizon)
+
+
+irfs_oil_prod_l <- irfs_l[irfs_l$variable == 'oil_prod',]
+lower_irfs_oil_prod_l = irfs_oil_prod_l$response - sd(irfs_oil_prod_l$response) #Lower 95% limit
+upper_irfs_oil_prod_l = irfs_oil_prod_l$response + sd(irfs_oil_prod_l$response) #Upper 95% limit
+
+irfs_world_ind_prod_l <- irfs_l[irfs_l$variable == 'world_ind_prod',]
+lower_irfs_world_ind_prod_l = irfs_world_ind_prod_l$response - sd(irfs_world_ind_prod_l$response) #Lower 95% limit
+upper_irfs_world_ind_prod_l = irfs_world_ind_prod_l$response + sd(irfs_world_ind_prod_l$response) #Upper 95% limit
+
+irfs_real_oil_price_l <- irfs_l[irfs_l$variable == 'real_oil_price',]
+lower_irfs_real_oil_price_l = irfs_real_oil_price_l$response - sd(irfs_real_oil_price_l$response) #Lower 95% limit
+upper_irfs_real_oil_price_l = irfs_real_oil_price_l$response + sd(irfs_real_oil_price_l$response) #Upper 95% limit
+
+irfs_glob_oil_stock_l <- irfs_l[irfs_l$variable == 'glob_oil_stock',]
+lower_irfs_glob_oil_stock_l = irfs_glob_oil_stock_l$response - sd(irfs_glob_oil_stock_l$response) #Lower 95% limit
+upper_irfs_glob_oil_stock_l = irfs_glob_oil_stock_l$response + sd(irfs_glob_oil_stock_l$response) #Upper 95% limit
+
+irfs_ind_prod_ea_l <- irfs_l[irfs_l$variable == 'ind_prod_ea',]
+lower_irfs_ind_prod_ea_l = irfs_ind_prod_ea_l$response - sd(irfs_ind_prod_ea_l$response) #Lower 95% limit
+upper_irfs_ind_prod_ea_l = irfs_ind_prod_ea_l$response + sd(irfs_ind_prod_ea_l$response) #Upper 95% limit
+
+irfs_cpi_ea_l <- irfs_l[irfs_l$variable == 'cpi_ea',]
+lower_irfs_cpi_ea_l = irfs_cpi_ea_l$response - sd(irfs_cpi_ea_l$response) #Lower 95% limit
+upper_irfs_cpi_ea_l = irfs_cpi_ea_l$response + sd(irfs_cpi_ea_l$response) #Upper 95% limit
+
+# Graphs
+
+irfs_oil_prod_g_l <- ggplot(irfs_oil_prod_l, aes(x = horizon, y = response)) +
+  geom_line(size = 1, col = "black") +
+  geom_line(aes(y = lower_irfs_oil_prod_l), color = "red", linetype = 5) +
+  geom_line(aes(y = upper_irfs_oil_prod_l), color = "red", linetype = 5) +
+  ggtitle("World oil production") +
+  theme_bw() +
+  labs(x="Horizon", y="Percent (MMBD)") +
+  theme(text=element_text(size=10,  family="serif"))
+
+
+irfs_world_ind_prod_g_l <- ggplot(irfs_world_ind_prod_l, aes(x = horizon, y = response)) +
+  geom_line(size = 1, col = "black") +
+  geom_line(aes(y = lower_irfs_world_ind_prod_l), color = "red", linetype = 5) +
+  geom_line(aes(y = upper_irfs_world_ind_prod_l), color = "red", linetype = 5) +
+  ggtitle("World industrial production") +
+  theme_bw() +
+  labs(x="Horizon", y="Percent (index)") +
+  theme(text=element_text(size=10,  family="serif"))
+
+irfs_real_oil_price_g_l <- ggplot(irfs_real_oil_price_l, aes(x = horizon, y = response)) +
+  geom_line(size = 1, col = "black") +
+  geom_line(aes(y = lower_irfs_real_oil_price_l), color = "red", linetype = 5) +
+  geom_line(aes(y = upper_irfs_real_oil_price_l), color = "red", linetype = 5) +
+  ggtitle("Real oil price") +
+  theme_bw() +
+  labs(x="Horizon", y="Percent (USD)") +
+  theme(text=element_text(size=10,  family="serif"))
+
+irfs_glob_oil_stock_g_l <- ggplot(irfs_glob_oil_stock_l, aes(x = horizon, y = response)) +
+  geom_line(size = 1, col = "black") +
+  geom_line(aes(y = lower_irfs_glob_oil_stock_l), color = "red", linetype = 5) +
+  geom_line(aes(y = upper_irfs_glob_oil_stock_l), color = "red", linetype = 5) +
+  ggtitle("World oil inventories") +
+  theme_bw() +
+  labs(x="Horizon", y="Percent (MMB)") +
+  theme(text=element_text(size=10,  family="serif"))
+
+irfs_ind_prod_ea_g_l <- ggplot(irfs_ind_prod_ea_l, aes(x = horizon, y = response)) +
+  geom_line(size = 1, col = "black") +
+  geom_line(aes(y = lower_irfs_ind_prod_ea_l), color = "red", linetype = 5) +
+  geom_line(aes(y = upper_irfs_ind_prod_ea_l), color = "red", linetype = 5) +
+  ggtitle("EA industrial production") +
+  theme_bw() +
+  labs(x="Horizon", y="Percent (index)") +
+  theme(text=element_text(size=10,  family="serif"))
+
+irfs_cpi_ea_g_l <- ggplot(irfs_cpi_ea_l, aes(x = horizon, y = response)) +
+  geom_line(size = 1, col = "black") +
+  geom_line(aes(y = lower_irfs_cpi_ea_l), color = "red", linetype = 5) +
+  geom_line(aes(y = upper_irfs_cpi_ea_l), color = "red", linetype = 5) +
+  ggtitle("EA CPI") +
+  theme_bw() +
+  labs(x="Horizon", y="Percent (index)") +
+  theme(text=element_text(size=10,  family="serif"))
+
+# Graphs for document
+
+results_1_g_l <- ggarrange(irfs_oil_prod_g_l, irfs_world_ind_prod_g_l, ncol = 1, nrow = 2)
+results_2_g_l <- ggarrange(irfs_real_oil_price_g_l, irfs_glob_oil_stock_g_l, ncol = 1, nrow = 2)
+results_3_g_l <- ggarrange(irfs_ind_prod_ea_g_l, irfs_cpi_ea_g_l, ncol = 1, nrow = 2)
+
+
+```
